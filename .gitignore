@@ -1,0 +1,64 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# VS Code settings
+.vscode/
+
+# Streamlit cache and logs
+.streamlit/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore test outputs
+htmlcov/
+.coverage
+.tox/
+.nox/
+
+# Ignore logs
+*.log
+
+# Ignore local data
+*.sqlite3
+
+# Ignore requirements lock files
+poetry.lock
+Pipfile.lock
+
+# Ignore any index.html (if accidentally created)
+index.html
