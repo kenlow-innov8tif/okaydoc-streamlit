@@ -3,7 +3,7 @@ import streamlit as st
 import io
 import base64
 
-def submit_okaydoc_api(edited_image, journey_id, api_params):
+def submit_okaydoc_api(edited_image, journey_id, api_params, base_url=None):
     buffered = io.BytesIO()
     edited_image.save(buffered, format="JPEG", quality=85)
     img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
@@ -26,7 +26,9 @@ def submit_okaydoc_api(edited_image, journey_id, api_params):
         "islamFieldTamperingDetection": api_params['islamFieldTamperingDetection'],
         "qualityCheckDetection": api_params['qualityCheckDetection']
     }
-    api_endpoint = "https://ekycportaldemo.innov8tif.com/api/ekyc/okaydoc"
-    st.info("Sending request to API...")
+    if base_url is None:
+        base_url = "https://ekycportaldemo.innov8tif.com"
+    api_endpoint = base_url.rstrip("/") + "/api/ekyc/okaydoc"
+    st.info(f"Sending request to API at {api_endpoint} ...")
     response = requests.post(api_endpoint, json=payload)
     return response
