@@ -1,12 +1,48 @@
 import streamlit as st
 
 def okayid_api_params_form():
-    with st.expander("API Request Parameters", expanded=False):
+    # Initialize session state for each parameter to ensure they persist
+    if 'okayid_image_format' not in st.session_state:
+        st.session_state['okayid_image_format'] = "JPG"
+    if 'okayid_image_enabled' not in st.session_state:
+        st.session_state['okayid_image_enabled'] = True
+    if 'okayid_face_image_enabled' not in st.session_state:
+        st.session_state['okayid_face_image_enabled'] = True
+    if 'okayid_cambodia' not in st.session_state:
+        st.session_state['okayid_cambodia'] = False
+
+    with st.expander("API Request Parameters", expanded=True):
         st.subheader("API Request Parameters")
-        image_format = st.radio("Image Format", ["JPG", "PNG"], index=0, key="okayid_image_format")
-        image_enabled = st.radio("Image Enabled", [True, False], index=0, key="okayid_image_enabled")
-        face_image_enabled = st.radio("Face Image Enabled", [True, False], index=0, key="okayid_face_image_enabled")
-        cambodia = st.radio("Cambodia", [True, False], index=1, key="okayid_cambodia")
+        
+        # Use session state to manage radio button selection
+        image_format = st.radio(
+            "Image Format", ["JPG", "PNG"], 
+            index=["JPG", "PNG"].index(st.session_state['okayid_image_format']), 
+            key="okayid_image_format_radio"
+        )
+        image_enabled = st.radio(
+            "Image Enabled", [True, False], 
+            index=[True, False].index(st.session_state['okayid_image_enabled']), 
+            key="okayid_image_enabled_radio"
+        )
+        face_image_enabled = st.radio(
+            "Face Image Enabled", [True, False], 
+            index=[True, False].index(st.session_state['okayid_face_image_enabled']), 
+            key="okayid_face_image_enabled_radio"
+        )
+        cambodia = st.radio(
+            "Cambodia", [True, False], 
+            index=[True, False].index(st.session_state['okayid_cambodia']), 
+            key="okayid_cambodia_radio"
+        )
+
+        # Update session state with the latest selections
+        st.session_state['okayid_image_format'] = image_format
+        st.session_state['okayid_image_enabled'] = image_enabled
+        st.session_state['okayid_face_image_enabled'] = face_image_enabled
+        st.session_state['okayid_cambodia'] = cambodia
+        
+        # Store the final parameters for API submission
         st.session_state['okayid_api_params'] = {
             'imageFormat': image_format,
             'imageEnabled': image_enabled,

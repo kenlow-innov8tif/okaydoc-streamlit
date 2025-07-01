@@ -62,7 +62,11 @@ def get_base_url():
     else:
         return 'https://ekycportaldemo.innov8tif.com'
 
-# Only create the journey ID form ONCE, outside of navigation logic
+# --- Sidebar Navigation ---
+nav_options = ["OkayID Submitter", "OkayDoc (Non-Passport) Submitter", "OkayDoc Passport Submitter", "OkayFace Submitter", "OkayLive Submitter"]
+nav_choice = st.sidebar.selectbox("Navigation", nav_options, key="nav_select")
+
+# --- Journey ID Section (Always Visible) ---
 with st.sidebar.form(key="journey_id_form", clear_on_submit=False):
     st.markdown("**Get Journey ID**")
     username = st.text_input("Username", key="username_input")
@@ -110,13 +114,6 @@ if st.session_state['journey_response']:
         st.sidebar.button("Copy to Clipboard", on_click=lambda: st.session_state.update({'_clipboard': journey_id_value}), key="copy_journey_id_btn")
     else:
         st.sidebar.code(resp, language='json')
-
-# --- Sidebar Navigation ---
-nav_options = ["OkayID Submitter", "OkayDoc (Non-Passport) Submitter", "OkayDoc Passport Submitter", "OkayFace Submitter", "OkayLive Submitter"]
-if 'nav_page' not in st.session_state:
-    st.session_state['nav_page'] = nav_options[0]
-nav_choice = st.sidebar.selectbox("Navigation", nav_options, index=nav_options.index(st.session_state['nav_page']), key="nav_select")
-st.session_state['nav_page'] = nav_choice
 
 def okayid_submitter_page():
     st.title("OkayID Submitter")
@@ -373,13 +370,13 @@ def okaylive_submitter_page():
                 st.exception(e)
 
 # --- Main Navigation Logic ---
-if st.session_state['nav_page'] == "OkayID Submitter":
+if nav_choice == "OkayID Submitter":
     okayid_submitter_page()
-elif st.session_state['nav_page'] == "OkayDoc (Non-Passport) Submitter":
+elif nav_choice == "OkayDoc (Non-Passport) Submitter":
     okaydoc_submitter_page()
-elif st.session_state['nav_page'] == "OkayDoc Passport Submitter":
+elif nav_choice == "OkayDoc Passport Submitter":
     okaydoc_passport_submitter_page()
-elif st.session_state['nav_page'] == "OkayLive Submitter":
+elif nav_choice == "OkayLive Submitter":
     okaylive_submitter_page()
 else:
     okayface_submitter_page()
