@@ -40,6 +40,173 @@ st.markdown(
         background-color: #1a1b1f !important;
         color: #f5f5f5 !important;
     }
+
+    /* Robust rules to keep the environment toggle fully clickable and visually on top across browsers */
+    .stSidebar * { box-sizing: border-box !important; }
+
+    /* Target Streamlit toggle switch and common wrapper variations */
+    .stSidebar [role="switch"],
+    .stSidebar .stToggle,
+    .stSidebar [data-testid^="stToggle"],
+    .stSidebar .css-1v3fvcr, /* fallback class selectors used by Streamlit variations */
+    .stSidebar .stCheckbox,
+    .stSidebar label[for^="env_toggle"] {
+        position: relative !important;
+        z-index: 999999 !important;
+        margin: 0 !important;
+        padding: 2px 6px !important; /* keep padding minimal so nothing covers the control */
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: .5rem !important;
+        pointer-events: auto !important; /* ensure it's always clickable */
+        background: transparent !important;
+        overflow: visible !important;
+    }
+
+    /* Make sure the toggle label/icon layers above nearby content */
+    .stSidebar [role="switch"] > div,
+    .stSidebar label,
+    .stSidebar .stToggle > div {
+        position: relative !important;
+        z-index: 999999 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        pointer-events: auto !important;
+    }
+
+    /* Allow the sidebar container to show overflow (so toggle won't be clipped) */
+    .stSidebarContent {
+        position: relative !important;
+        z-index: 999998 !important;
+        overflow: visible !important;
+        padding-top: 6px !important; /* small top padding so toggle never gets overlapped by header */
+    }
+
+    /* Reduce extra padding for nearby sidebar elements that could visually overlap the toggle in some browsers */
+    .stSidebar .stButton, .stSidebar .stTextInput, .stSidebar .stMarkdown {
+        margin-top: 6px !important;
+        margin-bottom: 6px !important;
+    }
+
+    /* Safety: ensure form wrappers don't create large invisible padding that could cover controls */
+    .stSidebar form > div, .stSidebar .stBlock > div {
+        padding: 0 !important;
+    }
+
+    /* final fallback: make sure any absolutely positioned overlays don't cover toggle */
+    .stSidebar [style*="position: absolute"] {
+        z-index: 999996 !important;
+    }
+
+    /* Remove any light/grey background that may appear behind the toggle */
+    .stSidebar [role="switch"],
+    .stSidebar .stToggle,
+    .stSidebar [data-testid^="stToggle"],
+    .stSidebar .css-1v3fvcr,
+    .stSidebar .stCheckbox,
+    .stSidebar label[for^="env_toggle"],
+    .stSidebar .stToggle > div {
+        background-color: transparent !important;
+        background-image: none !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+
+    /* Also clear backgrounds for surrounding wrapper elements that might show a panel */
+    .stSidebar .stBlock > div,
+    .stSidebar .stMarkdown,
+    .stSidebar .stTextInput > div,
+    .stSidebar .stButton > div {
+        background-color: transparent !important;
+        box-shadow: none !important;
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    /* Safety fix: explicitly target the actual input/checkbox elements and their labels so clicks reach them in Chrome */
+    .stSidebar input[type="checkbox"],
+    .stSidebar input[type="checkbox"][role="switch"],
+    .stSidebar [role="switch"] input,
+    .stSidebar [data-testid*="stToggle"] input,
+    .stSidebar .stToggle input {
+        pointer-events: auto !important;
+        position: relative !important;
+        z-index: 2147483647 !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        transform: none !important;
+        cursor: pointer !important;
+        background: transparent !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: auto !important;
+        height: auto !important;
+    }
+
+    /* Make the label clickable too */
+    .stSidebar label[for^="env_toggle"],
+    .stSidebar .stCheckbox > label,
+    .stSidebar [role="switch"] > div {
+        pointer-events: auto !important;
+        cursor: pointer !important;
+        position: relative !important;
+        z-index: 2147483647 !important;
+    }
+
+    /* If any overlay element is accidentally intercepting clicks, allow toggles to receive them by disabling pointer events on that overlay only when it's covering the toggle area */
+    .stSidebar [style*="position: absolute"][style*="top"] {
+        pointer-events: none !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# Extra CSS override injected after the initial block to ensure it takes precedence on refresh
+st.markdown(
+    """
+    <style>
+    /* Final, highest-priority overrides to keep sidebar toggles visible and clickable even after refresh
+       Uses extremely high z-index and broad selectors covering Streamlit's dynamic class names. */
+    .stSidebar [role="switch"],
+    .stSidebar [data-testid*="stToggle"],
+    .stSidebar [class*="stToggle"],
+    .stSidebar [class*="css-"] [role="switch"],
+    .stSidebar [class*="css-"] .stToggle,
+    .stSidebar .element-container [role="switch"],
+    .stSidebar .stCheckbox > label,
+    .stSidebar label[for^="env_toggle"] {
+        position: relative !important;
+        z-index: 2147483647 !important; /* near-maximum int to beat overlays */
+        visibility: visible !important;
+        opacity: 1 !important;
+        transform: none !important;
+        pointer-events: auto !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: .5rem !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: transparent !important;
+        background-image: none !important;
+        box-shadow: none !important;
+        border: none !important;
+        overflow: visible !important;
+    }
+
+    /* Ensure parent containers can't clip or cover the toggle */
+    .stSidebarContent, .stSidebar, .stSidebar .block-container, .stSidebar .element-container {
+        overflow: visible !important;
+        z-index: 2147483646 !important;
+    }
+
+    /* Hide any accidental overlay panels that appear directly under the header */
+    .stSidebar > div > div[role="group"] {
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+
     </style>
     """,
     unsafe_allow_html=True
