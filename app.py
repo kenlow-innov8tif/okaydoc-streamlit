@@ -40,6 +40,14 @@ st.markdown(
         background-color: #1a1b1f !important;
         color: #f5f5f5 !important;
     }
+    div[data-testid="stJson"] {
+        overflow-x: auto;
+    }
+    div[data-testid="stJson"] * {
+        white-space: pre !important;
+        overflow-wrap: normal !important;
+        word-break: normal !important;
+    }
     </style>
     """,
     unsafe_allow_html=True
