@@ -115,6 +115,23 @@ if st.session_state['journey_response']:
     else:
         st.sidebar.code(resp, language='json')
 
+def encode_image_base64(original_bytes, edited_image, is_edited, image_format, **save_options):
+    if not is_edited:
+        return base64.b64encode(original_bytes).decode("utf-8"), "Original upload"
+
+    buffered = io.BytesIO()
+    edited_image.save(buffered, format=image_format, **save_options)
+    return base64.b64encode(buffered.getvalue()).decode("utf-8"), "Edited image"
+
+def show_base64_output(image_label, image_base64, source_label):
+    st.caption(f"{image_label} source: {source_label}. Final 30 characters: `{image_base64[-30:]}`")
+    with st.expander(f"View {image_label} Base64"):
+        st.text_area(
+            f"{image_label} Base64 ({source_label})",
+            image_base64,
+            height=300,
+        )
+
 def okayid_submitter_page():
     st.title("OkayID Submitter")
     st.markdown("Upload Front Image of ID")
@@ -173,6 +190,32 @@ def okayid_submitter_page():
         else:
             st.info("Back Image Status: Sending original image.")
 
+    if front_file:
+        image_to_submit_front = edited_front if is_front_edited else front_image
+        if is_front_edited and image_to_submit_front.mode in ("RGBA", "LA", "P"):
+            image_to_submit_front = image_to_submit_front.convert("RGB")
+        front_b64, front_source_label = encode_image_base64(
+            front_bytes,
+            image_to_submit_front,
+            is_front_edited,
+            "JPEG",
+            icc_profile=icc_profile_front,
+        )
+        show_base64_output("Front Image", front_b64, front_source_label)
+
+    if back_file:
+        image_to_submit_back = edited_back if is_back_edited else back_image
+        if is_back_edited and image_to_submit_back.mode in ("RGBA", "LA", "P"):
+            image_to_submit_back = image_to_submit_back.convert("RGB")
+        back_b64, back_source_label = encode_image_base64(
+            back_bytes,
+            image_to_submit_back,
+            is_back_edited,
+            "JPEG",
+            icc_profile=icc_profile_back,
+        )
+        show_base64_output("Back Image", back_b64, back_source_label)
+
     if st.button("Submit OkayID API Request"):
         if not journey_id:
             st.error("Please get a Journey ID in the sidebar before submitting.")
@@ -180,28 +223,6 @@ def okayid_submitter_page():
             st.error("Please upload both front and back images.")
         else:
             try:
-                # Determine which images to use
-                image_to_submit_front = edited_front if is_front_edited else front_image
-                image_to_submit_back = edited_back if is_back_edited else back_image
-
-                # Convert front image to base64
-                if image_to_submit_front.mode in ("RGBA", "LA", "P"):
-                    image_to_submit_front = image_to_submit_front.convert("RGB")
-                buf_front = io.BytesIO()
-                image_to_submit_front.save(buf_front, format="JPEG", icc_profile=icc_profile_front)
-                front_b64 = base64.b64encode(buf_front.getvalue()).decode()
-
-                # Convert back image to base64
-                if image_to_submit_back.mode in ("RGBA", "LA", "P"):
-                    image_to_submit_back = image_to_submit_back.convert("RGB")
-                buf_back = io.BytesIO()
-                image_to_submit_back.save(buf_back, format="JPEG", icc_profile=icc_profile_back)
-                back_b64 = base64.b64encode(buf_back.getvalue()).decode()
-
-                with st.expander("View Base64 Strings"):
-                    st.text_area("Front Image Base64", front_b64, height=150)
-                    st.text_area("Back Image Base64", back_b64, height=150)
-
                 # Create payload from form and add images/journeyId
                 payload = st.session_state.get('okayid_api_params', {})
                 payload['journeyId'] = journey_id
@@ -256,6 +277,15 @@ def okaydoc_submitter_page():
             st.info("Status: The original image will be submitted without edits.")
             image_to_submit = original_image
 
+        img_str, source_label = encode_image_base64(
+            image_bytes,
+            image_to_submit,
+            is_edited,
+            "PNG",
+            optimize=True,
+        )
+        show_base64_output("ID Image", img_str, source_label)
+
         if st.button("Submit to OkayDoc API"):
             if not journey_id:
                 st.error("Please get a Journey ID in the sidebar before submitting.")
@@ -263,14 +293,6 @@ def okaydoc_submitter_page():
                 st.error("Image not available for submission.") # Should not happen if file is uploaded
             else:
                 try:
-                    # Convert image to base64
-                    buffered = io.BytesIO()
-                    image_to_submit.save(buffered, format="PNG", optimize=True)
-                    img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-                    with st.expander("View Base64 String"):
-                        st.text_area("ID Image Base64", img_str, height=150)
-
                     # Create payload
                     api_params = st.session_state.get('api_params', {})
                     payload = {
@@ -351,6 +373,28 @@ def okaydoc_passport_submitter_page():
         else:
             st.info("Full Size Image Status: Sending original image.")
 
+    if half_file:
+        image_to_submit_half = edited_half if is_half_edited else half_image
+        half_b64, half_source_label = encode_image_base64(
+            half_bytes,
+            image_to_submit_half,
+            is_half_edited,
+            "PNG",
+            optimize=True,
+        )
+        show_base64_output("Half Size Image", half_b64, half_source_label)
+
+    if full_file:
+        image_to_submit_full = edited_full if is_full_edited else full_image
+        full_b64, full_source_label = encode_image_base64(
+            full_bytes,
+            image_to_submit_full,
+            is_full_edited,
+            "PNG",
+            optimize=True,
+        )
+        show_base64_output("Full Size Image", full_b64, full_source_label)
+
     if st.button("Submit Passport Images to OkayDoc API"):
         if not journey_id:
             st.error("Please get a Journey ID in the sidebar before submitting.")
@@ -358,14 +402,6 @@ def okaydoc_passport_submitter_page():
             st.error("Please upload the half size image.")
         else:
             try:
-                # Determine which half image to use
-                image_to_submit_half = edited_half if is_half_edited else half_image
-
-                # Convert half image to base64
-                buf_half = io.BytesIO()
-                image_to_submit_half.save(buf_half, format="PNG", optimize=True)
-                half_b64 = base64.b64encode(buf_half.getvalue()).decode()
-
                 payload = {
                     "journeyId": journey_id,
                     "type": "passport",
@@ -374,17 +410,7 @@ def okaydoc_passport_submitter_page():
                 }
 
                 if full_file is not None:
-                    # Determine which full image to use
-                    image_to_submit_full = edited_full if is_full_edited else full_image
-                    buf_full = io.BytesIO()
-                    image_to_submit_full.save(buf_full, format="PNG", optimize=True)
-                    full_b64 = base64.b64encode(buf_full.getvalue()).decode()
                     payload["fullSizeImage"] = full_b64
-                
-                with st.expander("View Base64 Strings"):
-                    st.text_area("Half Size Image Base64", half_b64, height=150)
-                    if full_file is not None:
-                        st.text_area("Full Size Image Base64", payload.get("fullSizeImage", ""), height=150)
 
                 api_url = get_base_url() + "/api/ekyc/okaydoc"
                 resp = requests.post(api_url, json=payload)
