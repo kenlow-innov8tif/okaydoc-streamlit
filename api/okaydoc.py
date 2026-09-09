@@ -1,7 +1,7 @@
-import requests
 import streamlit as st
 import io
 import base64
+from utils.api_client import post_json
 
 def submit_okaydoc_api(edited_image, journey_id, api_params, base_url=None):
     buffered = io.BytesIO()
@@ -30,5 +30,5 @@ def submit_okaydoc_api(edited_image, journey_id, api_params, base_url=None):
         base_url = "https://ekycportaldemo.innov8tif.com"
     api_endpoint = base_url.rstrip("/") + "/api/ekyc/okaydoc"
     st.info(f"Sending request to API at {api_endpoint} ...")
-    response = requests.post(api_endpoint, json=payload)
+    response = post_json(api_endpoint, payload)
     return response

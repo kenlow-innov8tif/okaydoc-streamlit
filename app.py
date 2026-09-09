@@ -4,8 +4,14 @@ import io
 from components.image_edit import image_edit_tools
 from components.api_forms import okayid_api_params_form, okaydoc_api_params_form
 from api.journey import get_journey_id
-import requests
-import base64
+from utils.image_encoding import encode_image_base64, get_base64_decoded_size
+from utils.api_client import ApiRequestError, post_json, post_multipart
+from utils.environment import (
+    DEMO_ENVIRONMENT,
+    PRODUCTION_ENVIRONMENT,
+    get_base_url as get_environment_base_url,
+    get_environment_for_toggle,
+)
 
 # Set page config for a wider layout and light theme
 st.set_page_config(
@@ -40,13 +46,27 @@ st.markdown(
         background-color: #1a1b1f !important;
         color: #f5f5f5 !important;
     }
-    div[data-testid="stJson"] {
+    div.st-key-api-response-container {
+        contain: inline-size;
+        max-width: 100%;
+    }
+    div.st-key-api-response-container [data-testid="stJson"] {
+        max-width: 100%;
+        min-width: 0;
         overflow-x: auto;
     }
-    div[data-testid="stJson"] * {
+    div.st-key-api-response-container [data-testid="stJson"] * {
         white-space: pre !important;
         overflow-wrap: normal !important;
         word-break: normal !important;
+    }
+    div[class*="st-key-image-editor-"] [data-testid="stColumn"] {
+        min-width: 0 !important;
+    }
+    div[class*="st-key-image-editor-"] [data-testid="stImage"],
+    div[class*="st-key-image-editor-"] [data-testid="stImage"] img {
+        width: 100% !important;
+        height: auto !important;
     }
     </style>
     """,
@@ -58,17 +78,28 @@ st.sidebar.header("Settings")
 
 # --- Environment Toggle ---
 if 'environment' not in st.session_state:
-    st.session_state['environment'] = 'DEMO'
-# Use a checkbox instead of a toggle to avoid compatibility issues across browsers
-env_checkbox = st.sidebar.checkbox('Production Environment', value=(st.session_state['environment'] == 'PRODUCTION'), key='env_toggle')
-st.session_state['environment'] = 'PRODUCTION' if env_checkbox else 'DEMO'
+    st.session_state['environment'] = DEMO_ENVIRONMENT
+if 'env_toggle' not in st.session_state:
+    st.session_state['env_toggle'] = (
+        st.session_state['environment'] == PRODUCTION_ENVIRONMENT
+    )
+
+
+def sync_environment_from_toggle():
+    st.session_state['environment'] = get_environment_for_toggle(
+        st.session_state['env_toggle']
+    )
+
+
+st.sidebar.checkbox(
+    'Production Environment',
+    key='env_toggle',
+    on_change=sync_environment_from_toggle,
+)
 
 # Set base URL based on environment
 def get_base_url():
-    if st.session_state.get('environment', 'DEMO') == 'PRODUCTION':
-        return 'https://ekycportal.innov8tif.com'
-    else:
-        return 'https://ekycportaldemo.innov8tif.com'
+    return get_environment_base_url(st.session_state['environment'])
 
 # --- Sidebar Navigation ---
 nav_options = ["OkayID Submitter", "OkayDoc (Non-Passport) Submitter", "OkayDoc Passport Submitter", "OkayFace Submitter", "OkayLive Submitter"]
@@ -90,16 +121,16 @@ if submit_journey:
         try:
             journey_payload = {"username": username, "password": password}
             journey_api = get_base_url() + "/api/ekyc/journeyid"
-            resp = requests.post(journey_api, json=journey_payload)
+            resp = post_json(journey_api, journey_payload)
             if resp.status_code == 200:
                 st.session_state['journey_response'] = resp.json()
                 st.sidebar.success("Journey ID retrieved!")
             else:
                 st.session_state['journey_response'] = resp.text
                 st.sidebar.error(f"Failed: {resp.status_code}")
-        except Exception as e:
-            st.session_state['journey_response'] = str(e)
-            st.sidebar.error(f"Error: {e}")
+        except ApiRequestError as error:
+            st.session_state['journey_response'] = None
+            st.sidebar.error(error.message)
     else:
         st.sidebar.warning("Please enter both username and password.")
 
@@ -123,22 +154,35 @@ if st.session_state['journey_response']:
     else:
         st.sidebar.code(resp, language='json')
 
-def encode_image_base64(original_bytes, edited_image, is_edited, image_format, **save_options):
-    if not is_edited:
-        return base64.b64encode(original_bytes).decode("utf-8"), "Original upload"
-
-    buffered = io.BytesIO()
-    edited_image.save(buffered, format=image_format, **save_options)
-    return base64.b64encode(buffered.getvalue()).decode("utf-8"), "Edited image"
-
-def show_base64_output(image_label, image_base64, source_label):
-    st.caption(f"{image_label} source: {source_label}. Final 30 characters: `{image_base64[-30:]}`")
-    with st.expander(f"View {image_label} Base64"):
+def show_base64_output(image_label, image_base64, source_label, show_metadata=True):
+    if show_metadata:
+        decoded_size = get_base64_decoded_size(image_base64)
+        st.caption(
+            f"{image_label} source: {source_label}. "
+            f"Payload size: {decoded_size:,} bytes ({len(image_base64):,} Base64 characters)."
+        )
+    with st.expander(f"Debug: Reveal {image_label} Base64", expanded=False):
+        st.warning("This payload contains sensitive image data. Reveal it only for debugging.")
         st.text_area(
             f"{image_label} Base64 ({source_label})",
             image_base64,
             height=300,
         )
+
+
+def show_api_response(response, success_message):
+    st.subheader("API Response")
+    if response.status_code == 200:
+        st.success(success_message)
+    else:
+        st.error(f"API request failed with status code: {response.status_code}")
+
+    with st.container(height=700, border=True, key="api-response-container"):
+        try:
+            st.json(response.json())
+        except ValueError:
+            st.code(response.text or "The API returned an empty response body.")
+
 
 def okayid_submitter_page():
     st.title("OkayID Submitter")
@@ -209,7 +253,12 @@ def okayid_submitter_page():
             "JPEG",
             icc_profile=icc_profile_front,
         )
-        show_base64_output("Front Image", front_b64, front_source_label)
+        show_base64_output(
+            "Front Image",
+            front_b64,
+            front_source_label,
+            show_metadata=False,
+        )
 
     if back_file:
         image_to_submit_back = edited_back if is_back_edited else back_image
@@ -222,7 +271,12 @@ def okayid_submitter_page():
             "JPEG",
             icc_profile=icc_profile_back,
         )
-        show_base64_output("Back Image", back_b64, back_source_label)
+        show_base64_output(
+            "Back Image",
+            back_b64,
+            back_source_label,
+            show_metadata=False,
+        )
 
     if st.button("Submit OkayID API Request"):
         if not journey_id:
@@ -238,21 +292,13 @@ def okayid_submitter_page():
                 payload['backImage'] = back_b64
                 
                 api_url = get_base_url() + "/api/ekyc/okayid"
-                resp = requests.post(api_url, json=payload)
+                resp = post_json(api_url, payload)
 
-                st.subheader("API Response")
-                if resp.status_code == 200:
-                    st.success("OkayID API request successful!")
-                    st.json(resp.json())
-                else:
-                    st.error(f"API request failed with status code: {resp.status_code}")
-                    try:
-                        st.json(resp.json())
-                    except Exception:
-                        st.code(resp.text)
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
-                st.exception(e)
+                show_api_response(resp, "OkayID API request successful!")
+            except ApiRequestError as error:
+                st.error(error.message)
+            except Exception:
+                st.error("The request could not be prepared. Please review the uploaded files and try again.")
 
 def okaydoc_submitter_page():
     st.title("OkayDoc Non-Passport Submitter")
@@ -312,18 +358,13 @@ def okaydoc_submitter_page():
 
                     api_url = get_base_url() + "/api/ekyc/okaydoc"
                     st.info(f"Sending request to API at {api_url} ...")
-                    response = requests.post(api_url, json=payload)
+                    response = post_json(api_url, payload)
                     
-                    st.subheader("API Response")
-                    if response.status_code == 200:
-                        st.success("Image successfully submitted!")
-                        st.json(response.json())
-                    else:
-                        st.error(f"API request failed with status code: {response.status_code}")
-                        st.json(response.json())
-                except Exception as e:
-                    st.error(f"An error occurred: {e}")
-                    st.exception(e)
+                    show_api_response(response, "Image successfully submitted!")
+                except ApiRequestError as error:
+                    st.error(error.message)
+                except Exception:
+                    st.error("The request could not be prepared. Please review the uploaded file and try again.")
 
 def okaydoc_passport_submitter_page():
     st.title("OkayDoc Passport Submitter")
@@ -421,20 +462,12 @@ def okaydoc_passport_submitter_page():
                     payload["fullSizeImage"] = full_b64
 
                 api_url = get_base_url() + "/api/ekyc/okaydoc"
-                resp = requests.post(api_url, json=payload)
-                st.subheader("API Response")
-                if resp.status_code == 200:
-                    st.success("Passport images successfully submitted!")
-                    st.json(resp.json())
-                else:
-                    st.error(f"API request failed with status code: {resp.status_code}")
-                    try:
-                        st.json(resp.json())
-                    except Exception:
-                        st.code(resp.text)
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
-                st.exception(e)
+                resp = post_json(api_url, payload)
+                show_api_response(resp, "Passport images successfully submitted!")
+            except ApiRequestError as error:
+                st.error(error.message)
+            except Exception:
+                st.error("The request could not be prepared. Please review the uploaded files and try again.")
 
 def okayface_submitter_page():
     st.title("OkayFace Submitter")
@@ -485,25 +518,17 @@ def okayface_submitter_page():
                         'livenessDetection': liveness
                     }
                     api_url = get_base_url() + "/api/ekyc/okayface/v1-1"
-                    resp = requests.post(api_url, data=data, files=files)
-                    st.subheader("API Response")
-                    if resp.status_code == 200:
-                        st.success("OkayFace API request successful!")
-                        st.json(resp.json())
-                    else:
-                        st.error(f"API request failed with status code: {resp.status_code}")
-                        try:
-                            st.json(resp.json())
-                        except Exception:
-                            st.code(resp.text)
+                    resp = post_multipart(api_url, data, files)
+                    show_api_response(resp, "OkayFace API request successful!")
                 finally:
                     files['imageIdCard'].close()
                     files['imageBest'].close()
                     os.unlink(idcard_temp.name)
                     os.unlink(best_temp.name)
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
-                st.exception(e)
+            except ApiRequestError as error:
+                st.error(error.message)
+            except Exception:
+                st.error("The request could not be prepared. Please review the uploaded files and try again.")
 
 def okaylive_submitter_page():
     st.title("OkayLive Submitter")
@@ -538,23 +563,15 @@ def okaylive_submitter_page():
                         'journeyId': journey_id
                     }
                     api_url = get_base_url() + "/api/ekyc/okaylive"
-                    resp = requests.post(api_url, data=data, files=files)
-                    st.subheader("API Response")
-                    if resp.status_code == 200:
-                        st.success("OkayLive API request successful!")
-                        st.json(resp.json())
-                    else:
-                        st.error(f"API request failed with status code: {resp.status_code}")
-                        try:
-                            st.json(resp.json())
-                        except Exception:
-                            st.code(resp.text)
+                    resp = post_multipart(api_url, data, files)
+                    show_api_response(resp, "OkayLive API request successful!")
                 finally:
                     files['imageBest'].close()
                     os.unlink(best_temp.name)
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
-                st.exception(e)
+            except ApiRequestError as error:
+                st.error(error.message)
+            except Exception:
+                st.error("The request could not be prepared. Please review the uploaded file and try again.")
 
 # --- Main Navigation Logic ---
 if nav_choice == "OkayID Submitter":

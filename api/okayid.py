@@ -1,7 +1,7 @@
-import requests
 import streamlit as st
 import io
 import base64
+from utils.api_client import post_json
 
 def submit_okayid_api(edited_front, edited_back, journey_id, api_params, base_url=None):
     # Map JPG to JPEG for PIL compatibility
@@ -33,5 +33,5 @@ def submit_okayid_api(edited_front, edited_back, journey_id, api_params, base_ur
         base_url = "https://ekycportaldemo.innov8tif.com"
     api_endpoint = base_url.rstrip("/") + "/api/ekyc/okayid"
     st.info(f"Sending OkayID API request to {api_endpoint} ...")
-    response = requests.post(api_endpoint, json=payload)
+    response = post_json(api_endpoint, payload)
     return response
