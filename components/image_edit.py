@@ -1,6 +1,11 @@
 import streamlit as st
 from PIL import ImageEnhance, ImageOps
 from streamlit_cropper import st_cropper
+from utils.image_edit_state import reset_image_edit_state
+
+
+def reset_image_edit(prefix):
+    reset_image_edit_state(st.session_state, prefix)
 
 def image_edit_tools(image, prefix):
     # Initialize session state for cropping if it doesn't exist
@@ -49,13 +54,12 @@ def image_edit_tools(image, prefix):
                 if st.button(f"Enable Cropping ({prefix})", key=f"enable_crop_{prefix}"):
                     st.session_state[f'{prefix}_crop_enabled'] = True
                     st.rerun()
-            reset_btn = st.button(f"Reset Image Edit ({prefix})", key=f"reset_{prefix}_edit_btn")
-            if reset_btn:
-                st.session_state[f'{prefix}_brightness'] = 1.0
-                st.session_state[f'{prefix}_contrast'] = 1.0
-                st.session_state[f'{prefix}_crop_margin'] = 0
-                st.session_state[f'{prefix}_crop_enabled'] = False
-                st.rerun()
+            st.button(
+                f"Reset Image Edit ({prefix})",
+                key=f"reset_{prefix}_edit_btn",
+                on_click=reset_image_edit,
+                args=(prefix,),
+            )
 
         st.session_state[f'{prefix}_brightness'] = brightness
         st.session_state[f'{prefix}_contrast'] = contrast
