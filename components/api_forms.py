@@ -1,4 +1,5 @@
 import streamlit as st
+from utils.api_parameters import build_okaydoc_api_params
 
 def okayid_api_params_form():
     # Initialize session state for each parameter to ensure they persist
@@ -52,37 +53,35 @@ def okayid_api_params_form():
 
 def okaydoc_api_params_form():
     with st.expander("API Request Parameters", expanded=False):
-        with st.form(key="api_params_form", clear_on_submit=False):
-            st.subheader("API Request Parameters")
-            doc_type = st.text_input("Document Type", value="mykad", key="doc_type_input")
-            version = st.text_input("Version", value="7", key="version_input")
-            landmarkCheck = st.radio("Landmark Check", ["true", "false"], index=0, key="landmarkCheck_radio")
-            fontCheck = st.radio("Font Check", ["true", "false"], index=0, key="fontCheck_radio")
-            microprintCheck = st.radio("Microprint Check", ["true", "false"], index=0, key="microprintCheck_radio")
-            photoSubstitutionCheck = st.radio("Photo Substitution Check", ["true", "false"], index=0, key="photoSubstitutionCheck_radio")
-            icTypeCheck = st.radio("IC Type Check", ["true", "false"], index=0, key="icTypeCheck_radio")
-            colorMode = st.radio("Color Mode", ["true", "false"], index=0, key="colorMode_radio")
-            hologram = st.radio("Hologram", ["true", "false"], index=0, key="hologram_radio")
-            screenDetection = st.radio("Screen Detection", ["true", "false"], index=0, key="screenDetection_radio")
-            ghostPhotoColorDetection = st.radio("Ghost Photo Color Detection", ["true", "false"], index=0, key="ghostPhotoColorDetection_radio")
-            idBlurDetection = st.radio("ID Blur Detection", ["true", "false"], index=0, key="idBlurDetection_radio")
-            islamFieldTamperingDetection = st.radio("Islam Field Tampering Detection", ["true", "false"], index=0, key="islamFieldTamperingDetection_radio")
-            qualityCheckDetection = st.radio("Quality Check Detection", ["true", "false"], index=0, key="qualityCheckDetection_radio")
-            submit_api_params = st.form_submit_button("Save API Parameters")
-        if submit_api_params or 'api_params' not in st.session_state:
-            st.session_state['api_params'] = {
-                'docType': doc_type,
-                'version': version,
-                'landmarkCheck': landmarkCheck,
-                'fontCheck': fontCheck,
-                'microprintCheck': microprintCheck,
-                'photoSubstitutionCheck': photoSubstitutionCheck,
-                'icTypeCheck': icTypeCheck,
-                'colorMode': colorMode,
-                'hologram': hologram,
-                'screenDetection': screenDetection,
-                'ghostPhotoColorDetection': ghostPhotoColorDetection,
-                'idBlurDetection': idBlurDetection,
-                'islamFieldTamperingDetection': islamFieldTamperingDetection,
-                'qualityCheckDetection': qualityCheckDetection
-            }
+        st.subheader("API Request Parameters")
+        doc_type = st.text_input("Document Type", value="mykad", key="doc_type_input")
+        version = st.text_input("Version", value="7", key="version_input")
+        landmark_check = st.radio("Landmark Check", ["true", "false"], index=0, key="landmarkCheck_radio")
+        font_check = st.radio("Font Check", ["true", "false"], index=0, key="fontCheck_radio")
+        microprint_check = st.radio("Microprint Check", ["true", "false"], index=0, key="microprintCheck_radio")
+        photo_substitution_check = st.radio("Photo Substitution Check", ["true", "false"], index=0, key="photoSubstitutionCheck_radio")
+        ic_type_check = st.radio("IC Type Check", ["true", "false"], index=0, key="icTypeCheck_radio")
+        color_mode = st.radio("Color Mode", ["true", "false"], index=0, key="colorMode_radio")
+        hologram = st.radio("Hologram", ["true", "false"], index=0, key="hologram_radio")
+        screen_detection = st.radio("Screen Detection", ["true", "false"], index=0, key="screenDetection_radio")
+        ghost_photo_color_detection = st.radio("Ghost Photo Color Detection", ["true", "false"], index=0, key="ghostPhotoColorDetection_radio")
+        id_blur_detection = st.radio("ID Blur Detection", ["true", "false"], index=0, key="idBlurDetection_radio")
+        islam_field_tampering_detection = st.radio("Islam Field Tampering Detection", ["true", "false"], index=0, key="islamFieldTamperingDetection_radio")
+        quality_check_detection = st.radio("Quality Check Detection", ["true", "false"], index=0, key="qualityCheckDetection_radio")
+
+        st.session_state['api_params'] = build_okaydoc_api_params(
+            doc_type,
+            version,
+            landmark_check,
+            font_check,
+            microprint_check,
+            photo_substitution_check,
+            ic_type_check,
+            color_mode,
+            hologram,
+            screen_detection,
+            ghost_photo_color_detection,
+            id_blur_detection,
+            islam_field_tampering_detection,
+            quality_check_detection,
+        )

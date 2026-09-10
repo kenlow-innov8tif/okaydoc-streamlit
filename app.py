@@ -1,11 +1,21 @@
 import streamlit as st
 from PIL import Image
 import io
+import time
 from components.image_edit import image_edit_tools
 from components.api_forms import okayid_api_params_form, okaydoc_api_params_form
 from api.journey import get_journey_id
 from utils.image_encoding import encode_image_base64, get_base64_decoded_size
-from utils.api_client import ApiRequestError, post_json, post_multipart
+from utils.image_uploads import load_uploaded_image, reset_edits_for_new_upload
+from utils.api_client import ApiRequestError
+from api.submitters import (
+    request_journey_id,
+    submit_okaydoc_api,
+    submit_okaydoc_passport_api,
+    submit_okayface_api,
+    submit_okayid_api,
+    submit_okaylive_api,
+)
 from utils.environment import (
     DEMO_ENVIRONMENT,
     PRODUCTION_ENVIRONMENT,
@@ -20,7 +30,7 @@ st.set_page_config(
     initial_sidebar_state="auto"
 )
 
-# Inject CSS to force light mode and dark sidebar, but do NOT override radio button styles
+# Keep application and sidebar backgrounds consistent without overriding widget internals.
 st.markdown(
     """
     <style>
@@ -28,21 +38,7 @@ st.markdown(
         background-color: #23242a !important;
         color: #f5f5f5 !important;
     }
-    .stButton>button, .st-expanderHeader, .stTextInput label, .stTextInput div, .stTextInput input, .stSidebar, .stSidebarContent {
-        color: #f5f5f5 !important;
-    }
-    .st-bb, .st-bc, .st-bd, .st-be, .st-bf, .st-bg, .st-bh, .st-bi, .st-bj, .st-bk, .st-bl, .st-bm, .st-bn, .st-bo, .st-bp, .st-bq, .st-br, .st-bs, .st-bt, .st-bu, .st-bv, .st-bw, .st-bx, .st-by, .st-bz {
-        background-color: #23242a !important;
-    }
-    .st-expanderHeader {
-        background-color: #23242a !important;
-        color: #f5f5f5 !important;
-    }
-    .stTextInput>div>input {
-        background-color: #23242a !important;
-        color: #f5f5f5 !important;
-    }
-    .stSidebar, .stSidebarContent {
+    section[data-testid="stSidebar"] {
         background-color: #1a1b1f !important;
         color: #f5f5f5 !important;
     }
@@ -101,6 +97,22 @@ st.sidebar.checkbox(
 def get_base_url():
     return get_environment_base_url(st.session_state['environment'])
 
+
+def submit_with_loading(message, submitter, *args, placeholder=None):
+    if placeholder is not None:
+        with placeholder:
+            return submit_with_loading(message, submitter, *args)
+
+    started_at = time.monotonic()
+    with st.spinner(message, show_time=True):
+        try:
+            return submitter(*args)
+        finally:
+            remaining_time = 0.5 - (time.monotonic() - started_at)
+            if remaining_time > 0:
+                time.sleep(remaining_time)
+
+
 # --- Sidebar Navigation ---
 nav_options = ["OkayID Submitter", "OkayDoc (Non-Passport) Submitter", "OkayDoc Passport Submitter", "OkayFace Submitter", "OkayLive Submitter"]
 nav_choice = st.sidebar.selectbox("Navigation", nav_options, key="nav_select")
@@ -119,9 +131,13 @@ if 'journey_response' not in st.session_state:
 if submit_journey:
     if username and password:
         try:
-            journey_payload = {"username": username, "password": password}
-            journey_api = get_base_url() + "/api/ekyc/journeyid"
-            resp = post_json(journey_api, journey_payload)
+            resp = submit_with_loading(
+                "Requesting Journey ID...",
+                request_journey_id,
+                get_base_url(),
+                username,
+                password,
+            )
             if resp.status_code == 200:
                 st.session_state['journey_response'] = resp.json()
                 st.sidebar.success("Journey ID retrieved!")
@@ -170,6 +186,17 @@ def show_base64_output(image_label, image_base64, source_label, show_metadata=Tr
         )
 
 
+def prepare_uploaded_image(uploaded_file, image_label, prefix):
+    image_bytes = uploaded_file.getvalue()
+    image = load_uploaded_image(image_bytes)
+    if image is None:
+        st.error(f"{image_label} could not be opened. Please upload a valid PNG or JPEG image.")
+        return None, None
+
+    reset_edits_for_new_upload(st.session_state, prefix, image_bytes)
+    return image_bytes, image
+
+
 def show_api_response(response, success_message):
     st.subheader("API Response")
     if response.status_code == 200:
@@ -188,8 +215,8 @@ def okayid_submitter_page():
     st.title("OkayID Submitter")
     st.markdown("Upload Front Image of ID")
     front_file = st.file_uploader("Upload Front Image", type=["png", "jpg", "jpeg"], key="okayid_front")
-    st.markdown("Upload Back Image of ID")
-    back_file = st.file_uploader("Upload Back Image", type=["png", "jpg", "jpeg"], key="okayid_back")
+    st.markdown("Upload Back Image of ID (optional)")
+    back_file = st.file_uploader("Upload Back Image (optional)", type=["png", "jpg", "jpeg"], key="okayid_back")
     
     okayid_api_params_form()
 
@@ -203,46 +230,46 @@ def okayid_submitter_page():
     icc_profile_back = None
 
     if front_file is not None:
-        front_bytes = front_file.getvalue()
-        front_image = Image.open(io.BytesIO(front_bytes))
-        icc_profile_front = front_image.info.get('icc_profile')
-        st.subheader("Edit Front Image Parameters")
-        edited_front = image_edit_tools(front_image, "front")
-        is_front_edited = (
-            st.session_state.get('front_brightness', 1.0) != 1.0 or
-            st.session_state.get('front_contrast', 1.0) != 1.0 or
-            st.session_state.get('front_crop_margin', 0) != 0 or
-            st.session_state.get('front_crop_enabled', False)
-        )
+        front_bytes, front_image = prepare_uploaded_image(front_file, "Front image", "front")
+        if front_image is not None:
+            icc_profile_front = front_image.info.get('icc_profile')
+            st.subheader("Edit Front Image Parameters")
+            edited_front = image_edit_tools(front_image, "front")
+            is_front_edited = (
+                st.session_state.get('front_brightness', 1.0) != 1.0 or
+                st.session_state.get('front_contrast', 1.0) != 1.0 or
+                st.session_state.get('front_crop_margin', 0) != 0 or
+                st.session_state.get('front_crop_enabled', False)
+            )
 
     if back_file is not None:
-        back_bytes = back_file.getvalue()
-        back_image = Image.open(io.BytesIO(back_bytes))
-        icc_profile_back = back_image.info.get('icc_profile')
-        st.subheader("Edit Back Image Parameters")
-        edited_back = image_edit_tools(back_image, "back")
-        is_back_edited = (
-            st.session_state.get('back_brightness', 1.0) != 1.0 or
-            st.session_state.get('back_contrast', 1.0) != 1.0 or
-            st.session_state.get('back_crop_margin', 0) != 0 or
-            st.session_state.get('back_crop_enabled', False)
-        )
+        back_bytes, back_image = prepare_uploaded_image(back_file, "Back image", "back")
+        if back_image is not None:
+            icc_profile_back = back_image.info.get('icc_profile')
+            st.subheader("Edit Back Image Parameters")
+            edited_back = image_edit_tools(back_image, "back")
+            is_back_edited = (
+                st.session_state.get('back_brightness', 1.0) != 1.0 or
+                st.session_state.get('back_contrast', 1.0) != 1.0 or
+                st.session_state.get('back_crop_margin', 0) != 0 or
+                st.session_state.get('back_crop_enabled', False)
+            )
 
     journey_id = get_journey_id()
 
     # Status text
-    if front_file:
+    if front_image:
         if is_front_edited:
             st.info("Front Image Status: Sending edited image.")
         else:
             st.info("Front Image Status: Sending original image.")
-    if back_file:
+    if back_image:
         if is_back_edited:
             st.info("Back Image Status: Sending edited image.")
         else:
             st.info("Back Image Status: Sending original image.")
 
-    if front_file:
+    if front_image:
         image_to_submit_front = edited_front if is_front_edited else front_image
         if is_front_edited and image_to_submit_front.mode in ("RGBA", "LA", "P"):
             image_to_submit_front = image_to_submit_front.convert("RGB")
@@ -260,7 +287,7 @@ def okayid_submitter_page():
             show_metadata=False,
         )
 
-    if back_file:
+    if back_image:
         image_to_submit_back = edited_back if is_back_edited else back_image
         if is_back_edited and image_to_submit_back.mode in ("RGBA", "LA", "P"):
             image_to_submit_back = image_to_submit_back.convert("RGB")
@@ -278,21 +305,27 @@ def okayid_submitter_page():
             show_metadata=False,
         )
 
-    if st.button("Submit OkayID API Request"):
+    submit_okayid = st.button("Submit OkayID API Request")
+    loading_placeholder = st.empty()
+    if submit_okayid:
         if not journey_id:
             st.error("Please get a Journey ID in the sidebar before submitting.")
-        elif front_file is None or back_file is None:
-            st.error("Please upload both front and back images.")
+        elif front_image is None:
+            st.error("Please upload a front image.")
         else:
             try:
                 # Create payload from form and add images/journeyId
-                payload = st.session_state.get('okayid_api_params', {})
-                payload['journeyId'] = journey_id
-                payload['base64ImageString'] = front_b64
-                payload['backImage'] = back_b64
-                
-                api_url = get_base_url() + "/api/ekyc/okayid"
-                resp = post_json(api_url, payload)
+                api_params = st.session_state.get('okayid_api_params', {})
+                resp = submit_with_loading(
+                    "Submitting OkayID request...",
+                    submit_okayid_api,
+                    get_base_url(),
+                    journey_id,
+                    front_b64,
+                    api_params,
+                    back_b64 if back_image is not None else None,
+                    placeholder=loading_placeholder,
+                )
 
                 show_api_response(resp, "OkayID API request successful!")
             except ApiRequestError as error:
@@ -309,8 +342,9 @@ def okaydoc_submitter_page():
     icc_profile = None
 
     if uploaded_file is not None:
-        image_bytes = uploaded_file.getvalue()
-        original_image = Image.open(io.BytesIO(image_bytes))
+        image_bytes, original_image = prepare_uploaded_image(uploaded_file, "ID image", "doc")
+        if original_image is None:
+            return
         icc_profile = original_image.info.get('icc_profile')
         st.subheader("Edit Image Parameters")
         edited_image = image_edit_tools(original_image, "doc")
@@ -340,7 +374,9 @@ def okaydoc_submitter_page():
         )
         show_base64_output("ID Image", img_str, source_label)
 
-        if st.button("Submit to OkayDoc API"):
+        submit_okaydoc = st.button("Submit to OkayDoc API")
+        loading_placeholder = st.empty()
+        if submit_okaydoc:
             if not journey_id:
                 st.error("Please get a Journey ID in the sidebar before submitting.")
             elif image_to_submit is None:
@@ -349,16 +385,15 @@ def okaydoc_submitter_page():
                 try:
                     # Create payload
                     api_params = st.session_state.get('api_params', {})
-                    payload = {
-                        "journeyId": journey_id,
-                        "type": "nonpassport",
-                        "idImageBase64Image": img_str,
-                    }
-                    payload.update(api_params)
-
-                    api_url = get_base_url() + "/api/ekyc/okaydoc"
-                    st.info(f"Sending request to API at {api_url} ...")
-                    response = post_json(api_url, payload)
+                    response = submit_with_loading(
+                        "Submitting OkayDoc request...",
+                        submit_okaydoc_api,
+                        get_base_url(),
+                        journey_id,
+                        img_str,
+                        api_params,
+                        placeholder=loading_placeholder,
+                    )
                     
                     show_api_response(response, "Image successfully submitted!")
                 except ApiRequestError as error:
@@ -383,8 +418,9 @@ def okaydoc_passport_submitter_page():
     icc_profile_full = None
     
     if half_file is not None:
-        half_bytes = half_file.getvalue()
-        half_image = Image.open(io.BytesIO(half_bytes))
+        half_bytes, half_image = prepare_uploaded_image(half_file, "Half size passport image", "passport_half")
+        if half_image is None:
+            return
         icc_profile_half = half_image.info.get('icc_profile')
         st.subheader("Edit Half Size Image Parameters")
         edited_half = image_edit_tools(half_image, "passport_half")
@@ -396,8 +432,9 @@ def okaydoc_passport_submitter_page():
         )
 
     if full_file is not None:
-        full_bytes = full_file.getvalue()
-        full_image = Image.open(io.BytesIO(full_bytes))
+        full_bytes, full_image = prepare_uploaded_image(full_file, "Full size passport image", "passport_full")
+        if full_image is None:
+            return
         icc_profile_full = full_image.info.get('icc_profile')
         st.subheader("Edit Full Size Image Parameters")
         edited_full = image_edit_tools(full_image, "passport_full")
@@ -444,25 +481,25 @@ def okaydoc_passport_submitter_page():
         )
         show_base64_output("Full Size Image", full_b64, full_source_label)
 
-    if st.button("Submit Passport Images to OkayDoc API"):
+    submit_passport = st.button("Submit Passport Images to OkayDoc API")
+    loading_placeholder = st.empty()
+    if submit_passport:
         if not journey_id:
             st.error("Please get a Journey ID in the sidebar before submitting.")
         elif half_file is None:
             st.error("Please upload the half size image.")
         else:
             try:
-                payload = {
-                    "journeyId": journey_id,
-                    "type": "passport",
-                    "country": country,
-                    "halfSizeImage": half_b64
-                }
-
-                if full_file is not None:
-                    payload["fullSizeImage"] = full_b64
-
-                api_url = get_base_url() + "/api/ekyc/okaydoc"
-                resp = post_json(api_url, payload)
+                resp = submit_with_loading(
+                    "Submitting passport request...",
+                    submit_okaydoc_passport_api,
+                    get_base_url(),
+                    journey_id,
+                    country,
+                    half_b64,
+                    full_b64 if full_file is not None else None,
+                    placeholder=loading_placeholder,
+                )
                 show_api_response(resp, "Passport images successfully submitted!")
             except ApiRequestError as error:
                 st.error(error.message)
@@ -478,17 +515,21 @@ def okayface_submitter_page():
     edited_idcard = None
     edited_best = None
     if idcard_file is not None:
-        idcard_bytes = idcard_file.getvalue()
-        idcard_image = Image.open(io.BytesIO(idcard_bytes))
+        idcard_bytes, idcard_image = prepare_uploaded_image(idcard_file, "ID card image", "okayface_idcard")
+        if idcard_image is None:
+            return
         st.subheader("Edit ID Card Image Parameters")
         edited_idcard = image_edit_tools(idcard_image, "okayface_idcard")
     if best_file is not None:
-        best_bytes = best_file.getvalue()
-        best_image = Image.open(io.BytesIO(best_bytes))
+        best_bytes, best_image = prepare_uploaded_image(best_file, "Best face image", "okayface_best")
+        if best_image is None:
+            return
         st.subheader("Edit Best Face Image Parameters")
         edited_best = image_edit_tools(best_image, "okayface_best")
     journey_id = get_journey_id()
-    if st.button("Submit OkayFace API Request"):
+    submit_okayface = st.button("Submit OkayFace API Request")
+    loading_placeholder = st.empty()
+    if submit_okayface:
         if not journey_id:
             st.error("Please get a Journey ID in the sidebar before submitting.")
         elif edited_idcard is None or edited_best is None:
@@ -513,12 +554,15 @@ def okayface_submitter_page():
                         'imageIdCard': open(idcard_temp.name, 'rb'),
                         'imageBest': open(best_temp.name, 'rb')
                     }
-                    data = {
-                        'journeyId': journey_id,
-                        'livenessDetection': liveness
-                    }
-                    api_url = get_base_url() + "/api/ekyc/okayface/v1-1"
-                    resp = post_multipart(api_url, data, files)
+                    resp = submit_with_loading(
+                        "Submitting OkayFace request...",
+                        submit_okayface_api,
+                        get_base_url(),
+                        journey_id,
+                        liveness,
+                        files,
+                        placeholder=loading_placeholder,
+                    )
                     show_api_response(resp, "OkayFace API request successful!")
                 finally:
                     files['imageIdCard'].close()
@@ -536,12 +580,15 @@ def okaylive_submitter_page():
     best_file = st.file_uploader("Upload Best Face Image", type=["png", "jpg", "jpeg"], key="okaylive_best")
     edited_best = None
     if best_file is not None:
-        best_bytes = best_file.getvalue()
-        best_image = Image.open(io.BytesIO(best_bytes))
+        best_bytes, best_image = prepare_uploaded_image(best_file, "Best face image", "okaylive_best")
+        if best_image is None:
+            return
         st.subheader("Edit Best Face Image Parameters")
         edited_best = image_edit_tools(best_image, "okaylive_best")
     journey_id = get_journey_id()
-    if st.button("Submit OkayLive API Request"):
+    submit_okaylive = st.button("Submit OkayLive API Request")
+    loading_placeholder = st.empty()
+    if submit_okaylive:
         if not journey_id:
             st.error("Please get a Journey ID in the sidebar before submitting.")
         elif edited_best is None:
@@ -559,11 +606,14 @@ def okaylive_submitter_page():
                     files = {
                         'imageBest': open(best_temp.name, 'rb')
                     }
-                    data = {
-                        'journeyId': journey_id
-                    }
-                    api_url = get_base_url() + "/api/ekyc/okaylive"
-                    resp = post_multipart(api_url, data, files)
+                    resp = submit_with_loading(
+                        "Submitting OkayLive request...",
+                        submit_okaylive_api,
+                        get_base_url(),
+                        journey_id,
+                        files,
+                        placeholder=loading_placeholder,
+                    )
                     show_api_response(resp, "OkayLive API request successful!")
                 finally:
                     files['imageBest'].close()
@@ -584,4 +634,3 @@ elif nav_choice == "OkayLive Submitter":
     okaylive_submitter_page()
 else:
     okayface_submitter_page()
-
